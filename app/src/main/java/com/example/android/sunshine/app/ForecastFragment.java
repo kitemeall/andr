@@ -2,9 +2,11 @@ package com.example.android.sunshine.app;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
 import android.text.format.Time;
 import android.util.Log;
@@ -34,9 +36,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * Created by ri on 02.12.15.
- */
+
 public class ForecastFragment extends Fragment {
 
     private ArrayAdapter<String> mForecastAdapter;
@@ -48,32 +48,19 @@ public class ForecastFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
 
-        // Create some dummy data for the ListView.  Here's a sample weekly forecast
-        String[] data = {
-                "Mon 6/23 - Sunny - 31/17",
-                "Tue 6/24 - Foggy - 21/8",
-                "Wed 6/25 - Cloudy - 22/17",
-                "Thurs 6/26 - Rainy - 18/11",
-                "Fri 6/27 - Foggy - 21/10",
-                "Sat 6/28 - TRAPPED IN WEATHERSTATION - 23/18",
-                "Sun 6/29 - Sunny - 20/7"
-        };
-        List<String> weekForecast = new ArrayList<String>(Arrays.asList(data));
 
 
-        // Now that we have some dummy forecast data, create an ArrayAdapter.
-        // The ArrayAdapter will take data from a source (like our dummy forecast) and
-        // use it to populate the ListView it's attached to.
+
+
         mForecastAdapter =
                 new ArrayAdapter<String>(
                         getActivity(), // The current context (this activity)
                         R.layout.list_item_forecast, // The name of the layout ID.
                         R.id.list_item_forecast_textview, // The ID of the textview to populate.
-                        weekForecast);
+                        new ArrayList<String>());
 
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
-        // Get a reference to the ListView, and attach this adapter to it.
         ListView listView = (ListView) rootView.findViewById(R.id.listview_forecast);
         listView.setAdapter(mForecastAdapter);
 
@@ -81,7 +68,6 @@ public class ForecastFragment extends Fragment {
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
-                Context context = adapterView.getContext();
                 String forecast = mForecastAdapter.getItem(i);
 
                 Intent intent = new Intent(getActivity(), DetailActivity.class)
@@ -91,12 +77,10 @@ public class ForecastFragment extends Fragment {
 
             }
         });
-        // These two need to be declared outside the try/catch
-        // so that they can be closed in the finally block.
+
         HttpURLConnection urlConnection = null;
         BufferedReader reader = null;
 
-        // Will contain the raw JSON response as a strin
 
         return rootView;
     }
@@ -104,29 +88,36 @@ public class ForecastFragment extends Fragment {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
         setHasOptionsMenu(true);
     }
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        // Inflate the menu; this adds items to the action bar if it is present.
         inflater.inflate(R.menu.forecastfragment, menu);
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
         int id = item.getItemId();
         if (id == R.id.action_refresh) {
-           FetchWeatherTask weatherTask = new FetchWeatherTask();
-           weatherTask.execute("198320");
-
+            updateWeather();
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        updateWeather();
+    }
+
+    private void updateWeather() {
+        FetchWeatherTask weatherTask = new FetchWeatherTask();
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String location = prefs.getString(getString(R.string.pref_location_key),
+                getString(R.string.pref_location_default));
+        weatherTask.execute(location);
     }
 
     public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
@@ -135,18 +126,12 @@ public class ForecastFragment extends Fragment {
 
         @Override
         protected String[] doInBackground(String... params) {
-
-            // If there's no zip code, there's nothing to look up.  Verify size of params.
             if (params.length == 0) {
                 return null;
             }
 
-            // These two need to be declared outside the try/catch
-            // so that they can be closed in the finally block.
             HttpURLConnection urlConnection = null;
             BufferedReader reader = null;
-
-            // Will contain the raw JSON response as a string.
             String forecastJsonStr = null;
 
             String format = "json";
@@ -170,11 +155,9 @@ public class ForecastFragment extends Fragment {
                         .appendQueryParameter(DAYS_PARAM, Integer.toString(numDays))
                         .appendQueryParameter(APPID_PARAM, BuildConfig.OPEN_WEATHER_MAP_API_KEY)
                         .build();
-
                 URL url = new URL(builtUri.toString());
 
-
-                // Create the request to OpenWeatherMap, and open the connection
+                //create connection
                 urlConnection = (HttpURLConnection) url.openConnection();
                 urlConnection.setRequestMethod("GET");
                 urlConnection.connect();
@@ -190,9 +173,6 @@ public class ForecastFragment extends Fragment {
 
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    // Since it's JSON, adding a newline isn't necessary (it won't affect parsing)
-                    // But it does make debugging a *lot* easier if you print out the completed
-                    // buffer for debugging.
                     buffer.append(line + "\n");
                 }
 
@@ -204,6 +184,7 @@ public class ForecastFragment extends Fragment {
 
             } catch (IOException e) {
                 Log.e(LOG_TAG, "Error ", e);
+
                 // If the code didn't successfully get the weather data, there's no point in attemping
                 // to parse it.
                 return null;
@@ -236,10 +217,16 @@ public class ForecastFragment extends Fragment {
             return shortenedDateFormat.format(time);
         }
 
-        /**
-         * Prepare the weather high/lows for presentation.
-         */
-        private String formatHighLows(double high, double low) {
+
+        private String formatHighLows(double high, double low, String unitType) {
+
+            if (unitType.equals(getString(R.string.pref_temperature_units_imperial))) {
+                high = (high * 1.8) + 32;
+                low = (low * 1.8) + 32;
+            } else if (!unitType.equals(getString(R.string.pref_temperature_units_metric))) {
+                Log.d(LOG_TAG, "Unit type not found: " + unitType);
+            }
+
             // For presentation, assume the user doesn't care about tenths of a degree.
             long roundedHigh = Math.round(high);
             long roundedLow = Math.round(low);
@@ -248,13 +235,7 @@ public class ForecastFragment extends Fragment {
             return highLowStr;
         }
 
-        /**
-         * Take the String representing the complete forecast in JSON Format and
-         * pull out the data we need to construct the Strings needed for the wireframes.
-         * <p/>
-         * Fortunately parsing is easy:  constructor takes the JSON string and converts it
-         * into an Object hierarchy for us.
-         */
+
         private String[] getWeatherDataFromJson(String forecastJsonStr, int numDays)
                 throws JSONException {
 
@@ -269,14 +250,6 @@ public class ForecastFragment extends Fragment {
             JSONObject forecastJson = new JSONObject(forecastJsonStr);
             JSONArray weatherArray = forecastJson.getJSONArray(OWM_LIST);
 
-            // OWM returns daily forecasts based upon the local time of the city that is being
-            // asked for, which means that we need to know the GMT offset to translate this data
-            // properly.
-
-            // Since this data is also sent in-order and the first day is always the
-            // current day, we're going to take advantage of that to get a nice
-            // normalized UTC date for all of our weather.
-
             Time dayTime = new Time();
             dayTime.setToNow();
 
@@ -286,7 +259,14 @@ public class ForecastFragment extends Fragment {
             // now we work exclusively in UTC
             dayTime = new Time();
 
+
             String[] resultStrs = new String[numDays];
+
+            SharedPreferences sharedPrefs =
+                    PreferenceManager.getDefaultSharedPreferences(getActivity());
+            String unitType = sharedPrefs.getString(
+                    getString(R.string.pref_temperature_units_key),
+                    getString(R.string.pref_temperature_units_default));
             for (int i = 0; i < weatherArray.length(); i++) {
                 // For now, using the format "Day, description, hi/low"
                 String day;
@@ -314,7 +294,7 @@ public class ForecastFragment extends Fragment {
                 double high = temperatureObject.getDouble(OWM_MAX);
                 double low = temperatureObject.getDouble(OWM_MIN);
 
-                highAndLow = formatHighLows(high, low);
+                highAndLow = formatHighLows(high, low,unitType);
                 resultStrs[i] = day + " - " + description + " - " + highAndLow;
             }
 
@@ -325,6 +305,7 @@ public class ForecastFragment extends Fragment {
 
         @Override
         protected void onPostExecute(String[] weekForecast) {
+            //Show our weather to user. Add it to ArrayAdapter
             if(weekForecast != null){
                 mForecastAdapter.clear();
                 for(String dayForecast :weekForecast){
